@@ -1,57 +1,77 @@
-module Cache #(
-    parameter NUM_SETS = 4,
-    parameter NUM_WAYS = 4,
+module Cache_Memory #(
     parameter DATA_WIDTH = 32,
-    parameter TAG_WIDTH = 4
+    parameter ADDR_WIDTH = 16,  
+    parameter INDEX_WIDTH = 6,  
+    parameter TAG_WIDTH = 8,
+    parameter NUM_WAYS = 4
 )(
     input clk,
-    input read_en,
-    input write_en,
-    input [TAG_WIDTH+1:0] address, // tag + set index
-    input [DATA_WIDTH-1:0] write_data,
-    input [DATA_WIDTH-1:0] ram_data, // data from RAM on miss
-    output reg hit,
-    output reg [DATA_WIDTH-1:0] read_data
+    input rst,
+    input [INDEX_WIDTH-1:0] index,
+
+    // Read Ports
+    output wire [NUM_WAYS*TAG_WIDTH-1:0]  r_tags,
+    output wire [NUM_WAYS*DATA_WIDTH-1:0] r_data,
+    output wire [NUM_WAYS-1:0]            r_valid,
+    output wire [NUM_WAYS-1:0]            r_dirty,
+    output wire [NUM_WAYS-1:0]            r_ref,
+
+    // Write Ports
+    input wire wr_en,
+    input wire [NUM_WAYS-1:0] way_sel,
+    input wire [TAG_WIDTH-1:0] w_tag,
+    input wire [DATA_WIDTH-1:0] w_data,
+    input wire w_valid,
+    input wire w_dirty,
+    
+    // LRU Update Port
+    input wire update_ref,
+    input wire [NUM_WAYS-1:0] w_ref
 );
 
-    // Cache storage
-    reg valid [0:NUM_SETS-1][0:NUM_WAYS-1];
-    reg [TAG_WIDTH-1:0] tag_mem [0:NUM_SETS-1][0:NUM_WAYS-1];
-    reg [DATA_WIDTH-1:0] data_mem [0:NUM_SETS-1][0:NUM_WAYS-1];
+    // Internal Memory Storage
+    reg [TAG_WIDTH-1:0]  tags  [0:(1<<INDEX_WIDTH)-1][0:NUM_WAYS-1];
+    reg [DATA_WIDTH-1:0] data  [0:(1<<INDEX_WIDTH)-1][0:NUM_WAYS-1];
+    reg                  valid [0:(1<<INDEX_WIDTH)-1][0:NUM_WAYS-1];
+    reg                  dirty [0:(1<<INDEX_WIDTH)-1][0:NUM_WAYS-1];
+    reg                  ref_b [0:(1<<INDEX_WIDTH)-1][0:NUM_WAYS-1];
 
-    integer i;
-    wire [1:0] set_index;
-    wire [TAG_WIDTH-1:0] tag;
-
-    assign set_index = address[1:0];
-    assign tag = address[TAG_WIDTH+1:2];
-
-    always @(posedge clk) begin
-        hit = 0;
-        read_data = 0;
-
-        // Check for hit
-        for (i = 0; i < NUM_WAYS; i = i + 1) begin
-            if (valid[set_index][i] && tag_mem[set_index][i] == tag) begin
-                hit = 1;
-                read_data = data_mem[set_index][i];
-                if (write_en)
-                    data_mem[set_index][i] <= write_data; // write-through
-            end
+    genvar i;
+    generate
+        for(i=0; i<NUM_WAYS; i=i+1) begin : OUTPUT_LOOP
+            assign r_tags[(i+1)*TAG_WIDTH-1 : i*TAG_WIDTH]   = tags[index][i];
+            assign r_data[(i+1)*DATA_WIDTH-1 : i*DATA_WIDTH] = data[index][i];
+            assign r_valid[i]                                = valid[index][i];
+            assign r_dirty[i]                                = dirty[index][i];
+            assign r_ref[i]                                  = ref_b[index][i];
         end
+    endgenerate
 
-        // On miss: copy data from RAM into first invalid way
-        if (read_en && !hit) begin
-            for (i = 0; i < NUM_WAYS; i = i + 1) begin
-                if (!valid[set_index][i]) begin
-                    valid[set_index][i] <= 1;
-                    tag_mem[set_index][i] <= tag;
-                    data_mem[set_index][i] <= ram_data;
-                    read_data <= ram_data;
-                    break;
+    integer k, m;
+    always @(posedge clk or posedge rst) begin
+        if(rst) begin
+            for(k=0; k<(1<<INDEX_WIDTH); k=k+1) 
+                for(m=0; m<NUM_WAYS; m=m+1) begin
+                    valid[k][m] <= 0;
+                    dirty[k][m] <= 0;
+                    ref_b[k][m] <= 0;
+                end
+        end else begin
+            if(wr_en) begin
+                for(m=0; m<NUM_WAYS; m=m+1) begin
+                    if(way_sel[m]) begin
+                        data[index][m]  <= w_data;
+                        tags[index][m]  <= w_tag;
+                        valid[index][m] <= w_valid;
+                        dirty[index][m] <= w_dirty;
+                    end
+                end
+            end
+            if(update_ref) begin
+                for(m=0; m<NUM_WAYS; m=m+1) begin
+                    ref_b[index][m] <= w_ref[m];
                 end
             end
         end
     end
-
 endmodule
