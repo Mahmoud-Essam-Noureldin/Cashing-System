@@ -47,29 +47,37 @@ module tb_cache_system;
         cpu_read_en = 1;
         cpu_write_en = 0;
         
-        // Wait for ready signal (Handle Stall)
-        wait(cpu_ready == 0); // Wait for busy
-        wait(cpu_ready == 1); // Wait for done
-        #10; // Hold for one cycle
+        // 1. Wait for the rising edge so the Controller sees the request
+        @(posedge clk);
+        
+        // 2. Wait until the Controller says "Ready" (Done)
+        // If it's a Miss, this waits. If it's a Hit, it proceeds immediately.
+        while (cpu_ready == 0) @(posedge clk);
+        
+        // 3. Hold for one more cycle to ensure data capture
+        @(posedge clk);
         cpu_read_en = 0;
     end
     endtask
-
     // Task to Perform a CPU Write
-    task cpu_write(input [ADDR_WIDTH-1:0] addr, input [DATA_WIDTH-1:0] data);
+   task cpu_write(input [ADDR_WIDTH-1:0] addr, input [DATA_WIDTH-1:0] data);
     begin
         cpu_address = addr;
         cpu_write_data = data;
         cpu_write_en = 1;
         cpu_read_en = 0;
         
-        wait(cpu_ready == 0);
-        wait(cpu_ready == 1);
-        #10;
+        // 1. Wait for the rising edge
+        @(posedge clk);
+        
+        // 2. Wait for Done
+        while (cpu_ready == 0) @(posedge clk);
+        
+        // 3. Hold
+        @(posedge clk);
         cpu_write_en = 0;
     end
     endtask
-
     // --- Main Test Sequence ---
     initial begin
         // 1. Initialize System
