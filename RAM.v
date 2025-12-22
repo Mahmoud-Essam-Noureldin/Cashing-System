@@ -27,4 +27,15 @@ module RAM #(
             r_data <= mem[addr];
         end
     end
+    
+    // --- INITIALIZATION FOR TESTING ---
+    integer i;
+    initial begin
+        // Fill RAM with a pattern: Data = Address
+        // Example: Address 0x0004 contains Data 0x00000004
+        for (i = 0; i < DEPTH; i = i + 1) begin
+            mem[i] = i; 
+        end
+    end
+
 endmodule
